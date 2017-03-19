@@ -160,11 +160,33 @@ class APIClient
         return $this->retrieveCollection($uri, 'RabbitMQ\Management\Entity\Queue');
     }
 
+    /**
+     * @return \RabbitMQ\Management\Entity\Queue
+     */
     public function getQueue($vhost, $name, Queue $queue = null)
     {
         $uri = sprintf('/api/queues/%s/%s', urlencode($vhost), urlencode($name));
 
         return $this->retrieveEntity($uri, 'RabbitMQ\Management\Entity\Queue', $queue);
+    }
+    
+    public function getMessagesFromQueue($vhost, $name, array $options = [])
+    {
+        $options = array_merge([
+            'count' => 1,
+            'requeue' => false,
+            'encoding' => 'auto',
+        ], $options);
+        
+        $uri = sprintf('/api/queues/%s/%s/get', urlencode($vhost), urlencode($name));
+        
+        try {
+            $res = $this->client->post($uri, array('Content-Type' => 'application/json'), json_encode($options))->send();
+        } catch (RequestException $e) {
+            throw new RuntimeException(sprintf('Unable to fetch data for %s', $targetEntity), $e->getCode(), $e);
+        }
+        
+        return $this->retrieveCollectionFromResponse($res, 'RabbitMQ\Management\Entity\Message');
     }
 
     public function refreshQueue(Queue $queue)
@@ -333,12 +355,17 @@ class APIClient
     private function retrieveCollection($uri, $targetEntity)
     {
         try {
-            $res = $this->client->get($uri)->send()->getBody(true);
+            $res = $this->client->get($uri)->send();
         } catch (RequestException $e) {
             throw new RuntimeException(sprintf('Unable to fetch data for %s', $targetEntity), $e->getCode(), $e);
         }
-
-        $data = json_decode($res, true);
+        
+        return $this->retrieveCollectionFromResponse($res, $targetEntity);
+    }
+    
+    private function retrieveCollectionFromResponse($res, $targetEntity)
+    {
+        $data = json_decode($res->getBody(true), true);
 
         $collection = new ArrayCollection();
 
